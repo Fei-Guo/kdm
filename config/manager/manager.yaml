@@ -71,7 +71,13 @@ spec:
         args:
         - --leader-elect
         image: controller:latest
+        imagePullPolicy: Always
         name: manager
+        env:
+          - name: SUBSCRIPTION_ID
+            value: ""
+          - name: USER_ASSIGNED_IDENTITY_ID
+            value: ""
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

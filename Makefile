@@ -1,8 +1,12 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= helayoty/kdm:v3
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.27.1
+
+AZURE_LOCATION ?= eastus
+AZURE_RESOURCE_GROUP ?= kdm-poc
+AZURE_CLUSTER_NAME ?= kdm
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -102,6 +106,11 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	- $(CONTAINER_TOOL) buildx rm project-v3-builder
 	rm Dockerfile.cross
 
+az-user-id:
+	$(eval USER_ASSIGNED_IDENTITY_ID=$(shell az aks show --name kdm --resource-group kdm-poc | jq -r ".identityProfile.kubeletidentity.clientId"))
+	$(eval AZURE_OBJECT_ID=$(shell az aks show --name kdm --resource-group kdm-poc | jq  -r ".identityProfile.kubeletidentity.objectId"))
+	az role assignment create --assignee $(AZURE_OBJECT_ID) --resource-group kdm-poc --role "Virtual Machine Contributor"
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -117,7 +126,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: az-user-id manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 

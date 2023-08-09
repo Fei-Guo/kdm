@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 
+	azclient "github.com/kdm/pkg/client"
+	"github.com/kdm/pkg/resources"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,6 +31,7 @@ import (
 
 // WorkspaceReconciler reconciles a Workspace object
 type WorkspaceReconciler struct {
+	AzClient *azclient.AZClient
 	client.Client
 	Scheme *runtime.Scheme
 }
@@ -47,10 +50,14 @@ type WorkspaceReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.15.0/pkg/reconcile
 func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
-
+	// Create Resource
+	// TODO pass resource spec
+	err := resources.CreateVMSS(ctx, r.AzClient)
+	if err != nil {
+		logger.V(4).Error(err, "creating Azure config, %s")
+	}
 	return ctrl.Result{}, nil
 }
 

@@ -3,6 +3,8 @@ FROM golang:1.20 as builder
 ARG TARGETOS
 ARG TARGETARCH
 
+ARG USER_ASSIGNED_IDENTITY_ID
+
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
@@ -14,7 +16,7 @@ RUN go mod download
 # Copy the go source
 COPY cmd/main.go cmd/main.go
 COPY api/ api/
-COPY internal/controller/ internal/controller/
+COPY pkg/ pkg/
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command

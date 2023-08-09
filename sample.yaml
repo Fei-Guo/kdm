@@ -1,0 +1,8 @@
+apiVersion: kdm.io/v1alpha1
+kind: Workspace
+metadata:
+  name: workspace-sample
+  namespace: default
+resource:
+  count: 1
+  instanceType: "any"

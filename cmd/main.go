@@ -20,6 +20,9 @@ import (
 	"flag"
 	"os"
 
+	"github.com/kdm/pkg/client"
+	"knative.dev/pkg/signals"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -32,7 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	kdmv1alpha1 "github.com/kdm/api/v1alpha1"
-	"github.com/kdm/internal/controller"
+	"github.com/kdm/pkg/controller"
+	"knative.dev/pkg/logging"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -49,6 +53,8 @@ func init() {
 }
 
 func main() {
+	ctx := signals.NewContext()
+
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -88,10 +94,19 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+	azConfig, err := client.GetAzConfig()
+	if err != nil {
+		logging.FromContext(ctx).Errorf("creating Azure config, %s", err)
+	}
+	azClients, err := client.CreateAzClient(azConfig)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("creating Azure client, %s", err)
+	}
 
 	if err = (&controller.WorkspaceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		AzClient: azClients,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workspace")
 		os.Exit(1)
