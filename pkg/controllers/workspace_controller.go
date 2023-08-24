@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,22 +38,38 @@ func (c *WorkspaceReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
+
+	if apimeta.IsStatusConditionTrue(workspaceObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeReady)) {
+		return reconcile.Result{}, nil
+	}
+
 	klog.InfoS("Reconciling", "workspace", req.NamespacedName)
+	err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionFalse,
+		"WorkspacePending", "starting provisioning workspace")
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	// Handle deleting workspace, garbage collect all the resources.
 	if !workspaceObj.DeletionTimestamp.IsZero() {
 		klog.InfoS("the workspace is in the process of being deleted", "workspace", klog.KObj(workspaceObj))
+		err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeDeleting, metav1.ConditionFalse,
+			"WorkspaceDeleted", "workspace is being deleted")
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 		return c.garbageCollectWorkspace(ctx, workspaceObj)
 	}
 
 	// Read ResourceSpec
-	err := c.applyWorkspaceResource(ctx, workspaceObj)
+	err = c.applyWorkspaceResource(ctx, workspaceObj)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 	// TODO apply InferenceSpec
 	// TODO apply TrainingSpec
-	// TODO Update workspace status
-	err = c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue, "Done", "Done")
+	err = c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue,
+		"WorkspaceReady", "workspace is ready")
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -62,6 +79,11 @@ func (c *WorkspaceReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *kdmv1alpha1.Workspace) error {
 	klog.InfoS("applyWorkspaceResource", "workspace", klog.KObj(wObj))
+	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionFalse,
+		"WorkspaceResourceDeploying", "starting provisioning workspace resource")
+	if err != nil {
+		return err
+	}
 	validNodeList := []*corev1.Node{}
 
 	// Check the current cluster nodes if they match the labelSelector and instanceType
@@ -118,12 +140,22 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 		}
 	}
 
-	// Ensure all nodes plugins are running successfully
+	//// Ensure all nodes plugins are running successfully
+	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionFalse,
+		"NodesConfiguring", "nodes are being configured")
+	if err != nil {
+		return err
+	}
 	for i := range validNodeList {
 		err = node.EnsureNodePlugins(ctx, validNodeList[i], c.Client)
 		if err != nil {
 			return err
 		}
+	}
+	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionTrue,
+		"NodesConfigured", "nodes have been configured")
+	if err != nil {
+		return err
 	}
 
 	// Add the valid nodes names to the WorkspaceStatus.WorkerNodes
@@ -132,6 +164,11 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 		return err
 	}
 
+	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionTrue,
+		"WorkspaceResourceDeployed", "workspace resource has been provisioned")
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -188,7 +225,12 @@ func (c *WorkspaceReconciler) validateNodeInstanceType(ctx context.Context, wObj
 
 func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *kdmv1alpha1.Workspace) (*corev1.Node, error) {
 	newMachine := machine.GenerateMachineManifest(ctx, wObj)
-	err := machine.CreateMachine(ctx, newMachine, c.Client)
+	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
+		"MachineProvisioning", "machines are being created")
+	if err != nil {
+		return nil, err
+	}
+	err = machine.CreateMachine(ctx, newMachine, c.Client)
 	if err != nil {
 		klog.ErrorS(err, "failed to create machine", "machine", newMachine.Name)
 		return nil, err
@@ -206,6 +248,12 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 		// TODO retry get machine
 	}
 	nodeObj, err := node.GetNode(ctx, nodeName, c.Client)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionTrue,
+		"MachineProvisioned", "machines have been created")
 	if err != nil {
 		return nil, err
 	}
