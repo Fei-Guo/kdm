@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -152,7 +151,7 @@ func (c *WorkspaceReconciler) validateCurrentClusterNodes(ctx context.Context, w
 	if err != nil {
 		return nil, err
 	}
-	if nodeList == nil {
+	if len(nodeList.Items) == 0 {
 		klog.InfoS("no current nodes match the workspace resource spec", "workspace", wObj.Name)
 		return nil, nil
 	}
@@ -197,30 +196,20 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	klog.InfoS("a new machine has been created", "machine", newMachine.Name)
 
 	// check machine status until it's ready
-	err = machine.CheckMachineStatus(ctx, newMachine.Name, newMachine.Namespace, c.Client)
+	err = machine.CheckMachineStatus(ctx, newMachine, c.Client)
 	if err != nil {
 		return nil, err
 	}
-	var nodesFromMachine *corev1.NodeList
-	err = retry.OnError(retry.DefaultRetry, func(err error) bool {
-		return true
-	}, func() error {
-		nodesFromMachine, err = node.ListNodes(ctx, c.Client, &client.ListOptions{
-			LabelSelector: labels.SelectorFromSet(map[string]string{"kubernetes.azure.com/agentpool": newMachine.Name}),
-		})
-		return err
-	})
+
+	nodeName := newMachine.Status.NodeName
+	if nodeName == "" {
+		// TODO retry get machine
+	}
+	nodeObj, err := node.GetNode(ctx, nodeName, c.Client)
 	if err != nil {
-		klog.ErrorS(err, "cannot find the corresponding node for the created machine", "machine", newMachine.Name)
 		return nil, err
 	}
-
-	if len(nodesFromMachine.Items) != 0 {
-		klog.InfoS("a new node has been created", "node", nodesFromMachine.Items[0].Name)
-		return lo.ToPtr(nodesFromMachine.Items[0]), nil
-	}
-
-	return nil, nil
+	return nodeObj, nil
 }
 
 func (c *WorkspaceReconciler) SetupWithManager(mgr ctrl.Manager) error {

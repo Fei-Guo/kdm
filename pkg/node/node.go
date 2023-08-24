@@ -47,9 +47,7 @@ func ListNodes(ctx context.Context, kubeClient client.Client, options *client.Li
 	if err != nil {
 		return nil, err
 	}
-	if nodeList.Items == nil {
-		return nil, fmt.Errorf("no nodes have been found")
-	}
+
 	return nodeList, nil
 }
 
