@@ -39,39 +39,41 @@ func (c *WorkspaceReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if apimeta.IsStatusConditionTrue(workspaceObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeReady)) {
-		return reconcile.Result{}, nil
-	}
-
 	klog.InfoS("Reconciling", "workspace", req.NamespacedName)
-	err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionFalse,
-		"WorkspacePending", "starting provisioning workspace")
-	if err != nil {
-		return reconcile.Result{}, err
+	if !apimeta.IsStatusConditionFalse(workspaceObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeReady)) {
+		err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionFalse,
+			"WorkspacePending", "starting provisioning workspace")
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	// Handle deleting workspace, garbage collect all the resources.
 	if !workspaceObj.DeletionTimestamp.IsZero() {
 		klog.InfoS("the workspace is in the process of being deleted", "workspace", klog.KObj(workspaceObj))
-		err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeDeleting, metav1.ConditionFalse,
-			"WorkspaceDeleted", "workspace is being deleted")
-		if err != nil {
-			return reconcile.Result{}, err
+		if !apimeta.IsStatusConditionTrue(workspaceObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeDeleting)) {
+			err := c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeDeleting, metav1.ConditionTrue,
+				"WorkspaceDeleted", "workspace is being deleted")
+			if err != nil {
+				return reconcile.Result{}, err
+			}
 		}
 		return c.garbageCollectWorkspace(ctx, workspaceObj)
 	}
 
 	// Read ResourceSpec
-	err = c.applyWorkspaceResource(ctx, workspaceObj)
+	err := c.applyWorkspaceResource(ctx, workspaceObj)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 	// TODO apply InferenceSpec
 	// TODO apply TrainingSpec
-	err = c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue,
-		"WorkspaceReady", "workspace is ready")
-	if err != nil {
-		return reconcile.Result{}, err
+	if !apimeta.IsStatusConditionTrue(workspaceObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeReady)) {
+		err = c.setWorkspaceStatusCondition(ctx, workspaceObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue,
+			"WorkspaceReady", "workspace is ready")
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{}, nil
@@ -79,10 +81,12 @@ func (c *WorkspaceReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 
 func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *kdmv1alpha1.Workspace) error {
 	klog.InfoS("applyWorkspaceResource", "workspace", klog.KObj(wObj))
-	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionFalse,
-		"WorkspaceResourceDeploying", "starting provisioning workspace resource")
-	if err != nil {
-		return err
+	if !apimeta.IsStatusConditionFalse(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned)) {
+		err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionFalse,
+			"WorkspaceResourceDeploying", "starting provisioning workspace resource")
+		if err != nil {
+			return err
+		}
 	}
 	validNodeList := []*corev1.Node{}
 
@@ -140,11 +144,13 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 		}
 	}
 
-	//// Ensure all nodes plugins are running successfully
-	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionFalse,
-		"NodesConfiguring", "nodes are being configured")
-	if err != nil {
-		return err
+	// Ensure all nodes plugins are running successfully
+	if !apimeta.IsStatusConditionFalse(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeConfigured)) {
+		err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionFalse,
+			"NodesConfiguring", "nodes are being configured")
+		if err != nil {
+			return err
+		}
 	}
 	for i := range validNodeList {
 		err = node.EnsureNodePlugins(ctx, validNodeList[i], c.Client)
@@ -152,22 +158,25 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 			return err
 		}
 	}
-	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionTrue,
-		"NodesConfigured", "nodes have been configured")
-	if err != nil {
-		return err
+	if !apimeta.IsStatusConditionTrue(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeConfigured)) {
+		err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeConfigured, metav1.ConditionTrue,
+			"NodesConfigured", "nodes have been configured")
+		if err != nil {
+			return err
+		}
 	}
-
 	// Add the valid nodes names to the WorkspaceStatus.WorkerNodes
 	err = c.updateWorkspaceStatusWithNodeList(ctx, wObj, validNodeList)
 	if err != nil {
 		return err
 	}
 
-	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionTrue,
-		"WorkspaceResourceDeployed", "workspace resource has been provisioned")
-	if err != nil {
-		return err
+	if !apimeta.IsStatusConditionTrue(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned)) {
+		err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionTrue,
+			"WorkspaceResourceDeployed", "workspace resource has been provisioned")
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -225,12 +234,14 @@ func (c *WorkspaceReconciler) validateNodeInstanceType(ctx context.Context, wObj
 
 func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *kdmv1alpha1.Workspace) (*corev1.Node, error) {
 	newMachine := machine.GenerateMachineManifest(ctx, wObj)
-	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
-		"MachineProvisioning", "machines are being created")
-	if err != nil {
-		return nil, err
+	if !apimeta.IsStatusConditionFalse(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned)) {
+		err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
+			"MachineProvisioning", "machines are being created")
+		if err != nil {
+			return nil, err
+		}
 	}
-	err = machine.CreateMachine(ctx, newMachine, c.Client)
+	err := machine.CreateMachine(ctx, newMachine, c.Client)
 	if err != nil {
 		klog.ErrorS(err, "failed to create machine", "machine", newMachine.Name)
 		return nil, err
@@ -252,10 +263,12 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 		return nil, err
 	}
 
-	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionTrue,
-		"MachineProvisioned", "machines have been created")
-	if err != nil {
-		return nil, err
+	if !apimeta.IsStatusConditionTrue(wObj.Status.Conditions, string(kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned)) {
+		err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionTrue,
+			"MachineProvisioned", "machines have been created")
+		if err != nil {
+			return nil, err
+		}
 	}
 	return nodeObj, nil
 }
