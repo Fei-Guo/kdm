@@ -314,6 +314,7 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 					if err := c.setConditionInstallNodePluginsToUnknown(ctx, wObj, nodeObj); err != nil {
 						return err
 					}
+					time.Sleep(1 * time.Second)
 					continue
 				}
 			}
@@ -330,13 +331,14 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 					if err := c.setConditionInstallNodePluginsToUnknown(ctx, wObj, nodeObj); err != nil {
 						return err
 					}
+					time.Sleep(1 * time.Second)
 					continue
 				}
 			}
 
 			// Update status
 			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionTrue,
-				"node plugins have been installed"); err != nil {
+				"InstallNodePluginsSuccess", "node plugins have been installed"); err != nil {
 				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 				return err
 			}
@@ -347,13 +349,12 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 
 func (c *WorkspaceReconciler) setConditionInstallNodePluginsToUnknown(ctx context.Context, wObj *kdmv1alpha1.Workspace, nodeObj *corev1.Node) error {
 	klog.InfoS("setConditionInstallNodePluginsToUnknown", "workspace", klog.KObj(wObj), "node", klog.KObj(nodeObj))
-	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionUnknown,
+	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionUnknown, "InstallNodePluginsWaiting",
 		fmt.Sprintf("waiting for plugins to get installed on node %s", nodeObj.Name))
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return err
 	}
-	time.Sleep(1 * time.Second)
 	return nil
 }
 
