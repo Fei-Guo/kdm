@@ -46,9 +46,9 @@ func (c *WorkspaceReconciler) setWorkspaceStatusCondition(ctx context.Context, w
 	}
 
 	cObj := metav1.Condition{
-		Type:               string(cType),
-		Status:             cStatus,
-		Message:            cMessage,
+		Type:    string(cType),
+		Status:  cStatus,
+		Message: cMessage,
 	}
 	meta.SetStatusCondition(&wObj.Status.Conditions, cObj)
 	return c.updateWorkspaceStatus(ctx, wObj)
