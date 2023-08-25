@@ -51,6 +51,28 @@ func ListNodes(ctx context.Context, kubeClient client.Client, options *client.Li
 	return nodeList, nil
 }
 
+// UpdateNodeWithLabel update the node object with the label key/value
+func UpdateNodeWithLabel(ctx context.Context, nodeName, labelKey, labelValue string, kubeClient client.Client) error {
+	klog.InfoS("UpdateNodeWithLabel", "nodeName", nodeName, "labelKey", labelKey, "labelValue", labelValue)
+
+	// get fresh node object
+	freshNode, err := GetNode(ctx, nodeName, kubeClient)
+	if err != nil {
+		klog.ErrorS(err, "cannot get node", "node", nodeName)
+		return err
+	}
+
+	freshNode.Labels = lo.Assign(freshNode.Labels, map[string]string{labelKey: labelValue})
+	opt := &client.UpdateOptions{}
+
+	err = kubeClient.Update(ctx, freshNode, opt)
+	if err != nil {
+		klog.ErrorS(err, "cannot update node label", "node", nodeName, labelKey, labelValue)
+		return err
+	}
+	return nil
+}
+
 func CheckNvidiaPlugin(ctx context.Context, nodeObj *corev1.Node) bool {
 	klog.InfoS("CheckNvidiaPlugin", "node", klog.KObj(nodeObj))
 	// check if label accelerator=nvidia exists in the node
@@ -81,19 +103,6 @@ func CheckDADIPlugin(ctx context.Context, nodeObj *corev1.Node, kubeClient clien
 		}
 	}
 	return checkDaemonSetPodForNode(ctx, DADIDaemonSetName, nodeObj.Name, kubeClient)
-}
-
-func UpdateNodeWithPluginLabels(ctx context.Context, nodeObj *corev1.Node, labelKey, labelValue string, kubeClient client.Client) error {
-	klog.InfoS("UpdateNodeWithPluginLabels", "nodeName", nodeObj.Name, "labelKey", labelKey, "labelValue", labelValue)
-	nodeObj.Labels = lo.Assign(nodeObj.Labels, map[string]string{labelKey: labelValue})
-	opt := &client.UpdateOptions{}
-
-	err := kubeClient.Update(ctx, nodeObj, opt)
-	if err != nil {
-		klog.ErrorS(err, "cannot update node with custom label to enable plugin", "node", nodeObj.Name, labelKey, labelValue)
-		return err
-	}
-	return nil
 }
 
 func checkDaemonSetPodForNode(ctx context.Context, daemonSetName, nodeName string, kubeClient client.Client) error {

@@ -59,8 +59,7 @@ func (c *WorkspaceReconciler) addOrUpdateWorkspace(ctx context.Context, wObj *kd
 	}
 	// TODO apply InferenceSpec
 	// TODO apply TrainingSpec
-	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue,
-		"workspaceReady", "workspace is ready")
+	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeReady, metav1.ConditionTrue, "workspace is ready")
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return reconcile.Result{}, err
@@ -72,8 +71,7 @@ func (c *WorkspaceReconciler) addOrUpdateWorkspace(ctx context.Context, wObj *kd
 func (c *WorkspaceReconciler) deleteWorkspace(ctx context.Context, wObj *kdmv1alpha1.Workspace) (reconcile.Result, error) {
 	klog.InfoS("deleteWorkspace", "workspace", klog.KObj(wObj))
 	// TODO delete workspace, machine(s), training and infer obj ( ok to delete machines which will delete nodes??)
-	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeDeleting, metav1.ConditionTrue,
-		"workspaceDeleted", "workspace is being deleted")
+	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeDeleting, metav1.ConditionTrue, "workspace is being deleted")
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return reconcile.Result{}, err
@@ -143,14 +141,14 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 	// Ensure all nodes plugins are running successfully
 	for i := range validNodeList {
 		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionFalse,
-			"installNodePlugins", fmt.Sprintf("installing plugins for node %s", validNodeList[i].Name)); err != nil {
+			fmt.Sprintf("installing plugins for node %s", validNodeList[i].Name)); err != nil {
 			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return err
 		}
 		err = c.ensureNodePlugins(ctx, wObj, validNodeList[i])
 		if err != nil {
 			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionFalse,
-				"installNodePlugins", err.Error()); err != nil {
+				err.Error()); err != nil {
 				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 				return err
 			}
@@ -165,7 +163,7 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 	}
 
 	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionTrue,
-		"workspaceResourceDeployedSuccess", "workspace resource is ready")
+		"workspace resource is ready")
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return err
@@ -229,7 +227,7 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	newMachine := machine.GenerateMachineManifest(ctx, wObj)
 
 	if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
-		"machineProvisioning", fmt.Sprintf("machine %s is getting provisioned", newMachine.Name)); err != nil {
+		fmt.Sprintf("machine %s is getting provisioned", newMachine.Name)); err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return nil, err
 	}
@@ -238,7 +236,7 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	if err != nil {
 		klog.ErrorS(err, "failed to create machine", "machine", newMachine.Name)
 		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
-			"machineFailedProvision", err.Error()); err != nil {
+			err.Error()); err != nil {
 			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return nil, err
 		}
@@ -247,14 +245,14 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	klog.InfoS("a new machine has been created", "machine", newMachine.Name)
 
 	if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineStatus, metav1.ConditionFalse,
-		"checkMachineStatus", "checking machine status"); err != nil {
+		"checking machine status"); err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return nil, err
 	}
 	// check machine status until it's ready
 	if err := machine.CheckMachineStatus(ctx, newMachine, c.Client); err != nil {
 		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineStatus, metav1.ConditionFalse,
-			"checkMachineStatusFailed", err.Error()); err != nil {
+			err.Error()); err != nil {
 			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return nil, err
 		}
@@ -262,7 +260,7 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	}
 
 	if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineStatus, metav1.ConditionTrue,
-		"checkMachineStatusSuccess", "check machine status successfully"); err != nil {
+		"check machine status successfully"); err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return nil, err
 	}
@@ -274,7 +272,7 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	nodeObj, err := node.GetNode(ctx, nodeName, c.Client)
 	if err != nil {
 		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionFalse,
-			"machineFailedProvision", err.Error()); err != nil {
+			err.Error()); err != nil {
 			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return nil, err
 		}
@@ -282,7 +280,7 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 	}
 
 	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeMachineProvisioned, metav1.ConditionTrue,
-		"machineProvisioned", "machines have been created")
+		"machines have been created")
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return nil, err
@@ -307,7 +305,7 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 			//Nvidia Plugin
 			foundNvidiaPlugin = node.CheckNvidiaPlugin(ctx, nodeObj)
 			if !foundNvidiaPlugin {
-				err := node.UpdateNodeWithPluginLabels(ctx, nodeObj, node.LabelKeyNvidia, node.LabelValueNvidia, c.Client)
+				err := node.UpdateNodeWithLabel(ctx, nodeObj.Name, node.LabelKeyNvidia, node.LabelValueNvidia, c.Client)
 				if err != nil {
 					if errors.IsNotFound(err) {
 						klog.ErrorS(fmt.Errorf("nvidia plugin cannot be installed, node not found"), "node", nodeObj.Name)
@@ -323,7 +321,7 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 			//DADI plugin
 			err := node.CheckDADIPlugin(ctx, nodeObj, c.Client)
 			if err != nil {
-				err = node.UpdateNodeWithPluginLabels(ctx, nodeObj, node.LabelKeyCustomGPUProvisioner, node.GPUString, c.Client)
+				err = node.UpdateNodeWithLabel(ctx, nodeObj.Name, node.LabelKeyCustomGPUProvisioner, node.GPUString, c.Client)
 				if err != nil {
 					if errors.IsNotFound(err) {
 						klog.ErrorS(fmt.Errorf("DADI plugin cannot be installed, node not found"), "node", nodeObj.Name)
@@ -338,7 +336,7 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 
 			// Update status
 			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionTrue,
-				"installNodePluginsSuccess", "node plugins have been installed"); err != nil {
+				"node plugins have been installed"); err != nil {
 				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 				return err
 			}
@@ -350,7 +348,7 @@ func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1
 func (c *WorkspaceReconciler) setConditionInstallNodePluginsToUnknown(ctx context.Context, wObj *kdmv1alpha1.Workspace, nodeObj *corev1.Node) error {
 	klog.InfoS("setConditionInstallNodePluginsToUnknown", "workspace", klog.KObj(wObj), "node", klog.KObj(nodeObj))
 	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionUnknown,
-		"machineProvisionedWaiting", fmt.Sprintf("waiting for plugins to get installed on node %s", nodeObj.Name))
+		fmt.Sprintf("waiting for plugins to get installed on node %s", nodeObj.Name))
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return err

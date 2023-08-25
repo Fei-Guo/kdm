@@ -29,7 +29,7 @@ func (c *WorkspaceReconciler) updateWorkspaceStatus(ctx context.Context, wObj *k
 }
 
 func (c *WorkspaceReconciler) setWorkspaceStatusCondition(ctx context.Context, wObj *kdmv1alpha1.Workspace, cType kdmv1alpha1.ConditionType,
-	cStatus metav1.ConditionStatus, cReason, cMessage string) error {
+	cStatus metav1.ConditionStatus, cMessage string) error {
 	klog.InfoS("setWorkspaceStatusCondition", "workspace", klog.KObj(wObj), "conditionType", cType, "status", cStatus)
 	// if no change in the condition status, return
 	switch cStatus {
@@ -48,8 +48,6 @@ func (c *WorkspaceReconciler) setWorkspaceStatusCondition(ctx context.Context, w
 	cObj := metav1.Condition{
 		Type:               string(cType),
 		Status:             cStatus,
-		Reason:             cReason,
-		ObservedGeneration: wObj.GetGeneration(),
 		Message:            cMessage,
 	}
 	meta.SetStatusCondition(&wObj.Status.Conditions, cObj)
