@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	kdmv1alpha1 "github.com/kdm/api/v1alpha1"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/apis/core"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -145,18 +147,13 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return err
 		}
-		err = node.EnsureNodePlugins(ctx, validNodeList[i], c.Client)
+		err = c.ensureNodePlugins(ctx, wObj, validNodeList[i])
 		if err != nil {
 			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionFalse,
 				"installNodePlugins", err.Error()); err != nil {
 				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 				return err
 			}
-			return err
-		}
-		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionTrue,
-			"installNodePluginsSuccess", "node plugins have been installed"); err != nil {
-			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return err
 		}
 	}
@@ -168,7 +165,7 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 	}
 
 	err = c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeResourceProvisioned, metav1.ConditionTrue,
-		"workspaceResourceDeployedSuccess", "workspace resource has been provisioned successfully")
+		"workspaceResourceDeployedSuccess", "workspace resource is ready")
 	if err != nil {
 		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 		return err
@@ -291,6 +288,75 @@ func (c *WorkspaceReconciler) createAndValidateNode(ctx context.Context, wObj *k
 		return nil, err
 	}
 	return nodeObj, nil
+}
+
+func (c *WorkspaceReconciler) ensureNodePlugins(ctx context.Context, wObj *kdmv1alpha1.Workspace, nodeObj *corev1.Node) error {
+	klog.InfoS("EnsureNodePlugins", "node", klog.KObj(nodeObj))
+
+	var foundNvidiaPlugin bool
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if nodeObj == nil {
+				return errors.NewNotFound(core.Resource("nodes"), nodeObj.Name)
+			}
+
+			//Nvidia Plugin
+			foundNvidiaPlugin = node.CheckNvidiaPlugin(ctx, nodeObj)
+			if !foundNvidiaPlugin {
+				err := node.UpdateNodeWithPluginLabels(ctx, nodeObj, node.LabelKeyNvidia, node.LabelValueNvidia, c.Client)
+				if err != nil {
+					if errors.IsNotFound(err) {
+						klog.ErrorS(fmt.Errorf("nvidia plugin cannot be installed, node not found"), "node", nodeObj.Name)
+						return err
+					}
+					if err := c.setConditionInstallNodePluginsToUnknown(ctx, wObj, nodeObj); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+
+			//DADI plugin
+			err := node.CheckDADIPlugin(ctx, nodeObj, c.Client)
+			if err != nil {
+				err = node.UpdateNodeWithPluginLabels(ctx, nodeObj, node.LabelKeyCustomGPUProvisioner, node.GPUString, c.Client)
+				if err != nil {
+					if errors.IsNotFound(err) {
+						klog.ErrorS(fmt.Errorf("DADI plugin cannot be installed, node not found"), "node", nodeObj.Name)
+						return err
+					}
+					if err := c.setConditionInstallNodePluginsToUnknown(ctx, wObj, nodeObj); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+
+			// Update status
+			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionTrue,
+				"installNodePluginsSuccess", "node plugins have been installed"); err != nil {
+				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
+				return err
+			}
+			return nil
+		}
+	}
+}
+
+func (c *WorkspaceReconciler) setConditionInstallNodePluginsToUnknown(ctx context.Context, wObj *kdmv1alpha1.Workspace, nodeObj *corev1.Node) error {
+	klog.InfoS("setConditionInstallNodePluginsToUnknown", "workspace", klog.KObj(wObj), "node", klog.KObj(nodeObj))
+	err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionUnknown,
+		"machineProvisionedWaiting", fmt.Sprintf("waiting for plugins to get installed on node %s", nodeObj.Name))
+	if err != nil {
+		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
+		return err
+	}
+	time.Sleep(1 * time.Second)
+	return nil
 }
 
 func (c *WorkspaceReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -3,11 +3,9 @@ package node
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -53,54 +51,13 @@ func ListNodes(ctx context.Context, kubeClient client.Client, options *client.Li
 	return nodeList, nil
 }
 
-func EnsureNodePlugins(ctx context.Context, nodeObj *corev1.Node, kubeClient client.Client) error {
-	klog.InfoS("EnsureNodePlugins", "node", klog.KObj(nodeObj))
-
-	var foundNvidiaPlugin, foundDADIPlugin bool
-	var err error
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			time.Sleep(1 * time.Second)
-			foundNvidiaPlugin, err = checkAndInstallNvidiaPlugin(ctx, nodeObj, kubeClient)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					return err
-				} else {
-					continue
-				}
-			}
-			foundDADIPlugin, err = checkAndInstallDADI(ctx, nodeObj, kubeClient)
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					return err
-				} else {
-					continue
-				}
-			}
-			if foundDADIPlugin && foundNvidiaPlugin {
-				return nil
-			}
-		}
-	}
-}
-
-func checkAndInstallNvidiaPlugin(ctx context.Context, nodeObj *corev1.Node, kubeClient client.Client) (bool, error) {
-	klog.InfoS("checkAndInstallNvidiaPlugin", "node", klog.KObj(nodeObj))
+func CheckNvidiaPlugin(ctx context.Context, nodeObj *corev1.Node) bool {
+	klog.InfoS("CheckNvidiaPlugin", "node", klog.KObj(nodeObj))
 	// check if label accelerator=nvidia exists in the node
 	var foundLabel, foundCapacity bool
 	if nvidiaLabelVal, found := nodeObj.Labels[LabelKeyNvidia]; found {
 		if nvidiaLabelVal == LabelValueNvidia {
 			foundLabel = true
-		} else {
-			nodeObj.Labels = lo.Assign(nodeObj.Labels, map[string]string{LabelKeyCustomGPUProvisioner: GPUString})
-			err := kubeClient.Update(ctx, nodeObj, nil)
-			if err != nil {
-				klog.ErrorS(err, "cannot update node with custom label to enable Nvidia plugin", "node", nodeObj.Name, LabelKeyCustomGPUProvisioner, GPUString)
-				return false, err
-			}
 		}
 	}
 
@@ -111,30 +68,35 @@ func checkAndInstallNvidiaPlugin(ctx context.Context, nodeObj *corev1.Node, kube
 	}
 
 	if foundLabel && foundCapacity {
-		return true, nil
+		return true
 	}
-
-	klog.ErrorS(fmt.Errorf("nvidia plugin cannot be installed"), "node", nodeObj.Name)
-	return false, nil
+	return false
 }
 
-func checkAndInstallDADI(ctx context.Context, nodeObj *corev1.Node, kubeClient client.Client) (bool, error) {
-	klog.InfoS("checkAndInstallDADI", "node", klog.KObj(nodeObj))
+func CheckDADIPlugin(ctx context.Context, nodeObj *corev1.Node, kubeClient client.Client) error {
+	klog.InfoS("CheckDADIPlugin", "node", klog.KObj(nodeObj))
 	if customLabel, found := nodeObj.Labels[LabelKeyCustomGPUProvisioner]; found {
 		if customLabel != GPUString {
-			nodeObj.Labels = lo.Assign(nodeObj.Labels, map[string]string{LabelKeyCustomGPUProvisioner: GPUString})
-			err := kubeClient.Update(ctx, nodeObj, nil)
-			if err != nil {
-				klog.ErrorS(err, "cannot update node with custom label to enable DADI plugin", "node", nodeObj.Name, LabelKeyCustomGPUProvisioner, GPUString)
-				return false, err
-			}
+			return nil
 		}
 	}
-
 	return checkDaemonSetPodForNode(ctx, DADIDaemonSetName, nodeObj.Name, kubeClient)
 }
 
-func checkDaemonSetPodForNode(ctx context.Context, daemonSetName, nodeName string, kubeClient client.Client) (bool, error) {
+func UpdateNodeWithPluginLabels(ctx context.Context, nodeObj *corev1.Node, labelKey, labelValue string, kubeClient client.Client) error {
+	klog.InfoS("UpdateNodeWithPluginLabels", "nodeName", nodeObj.Name, "labelKey", labelKey, "labelValue", labelValue)
+	nodeObj.Labels = lo.Assign(nodeObj.Labels, map[string]string{labelKey: labelValue})
+	opt := &client.UpdateOptions{}
+
+	err := kubeClient.Update(ctx, nodeObj, opt)
+	if err != nil {
+		klog.ErrorS(err, "cannot update node with custom label to enable plugin", "node", nodeObj.Name, labelKey, labelValue)
+		return err
+	}
+	return nil
+}
+
+func checkDaemonSetPodForNode(ctx context.Context, daemonSetName, nodeName string, kubeClient client.Client) error {
 	klog.InfoS("checkDaemonSetPodForNode", "daemonSetName", daemonSetName, "nodeName", nodeName)
 	podList := &corev1.PodList{}
 
@@ -151,18 +113,18 @@ func checkDaemonSetPodForNode(ctx context.Context, daemonSetName, nodeName strin
 	})
 	if err != nil {
 		klog.ErrorS(err, "cannot get pods for daemonset plugin", "daemonset-name", daemonSetName, "daemonset-namespace", GPUProvisionerNamespace, "node", nodeName)
-		return false, err
+		return err
 	}
 	// check ownerReference is the required daemonset
 	if len(podList.Items) == 0 {
-		return false, fmt.Errorf("no pods have been found")
+		return fmt.Errorf("no pods have been found running on the node %s", nodeName)
 	}
 
 	for p := range podList.Items {
 		if podList.Items[p].OwnerReferences[0].Kind == "DaemonSet" &&
 			podList.Items[p].OwnerReferences[0].Name == DADIDaemonSetName {
-			return true, nil
+			return nil
 		}
 	}
-	return false, fmt.Errorf("%s daemonset's pod for the node %s is not running", daemonSetName, nodeName)
+	return fmt.Errorf("%s daemonset's pod for the node %s is not running", daemonSetName, nodeName)
 }
