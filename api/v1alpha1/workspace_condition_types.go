@@ -13,8 +13,11 @@ const (
 	// WorkspaceConditionTypeResourceProvisioned is the state when Resources have been created.
 	WorkspaceConditionTypeResourceProvisioned = ConditionType("ResourceProvisioned")
 
-	// WorkspaceConditionTypeConfigured is the state when Resources have been Configured.
-	WorkspaceConditionTypeConfigured = ConditionType("ResourceConfigured")
+	// WorkspaceConditionTypeMachineStatus is the state when checking machine status.
+	WorkspaceConditionTypeMachineStatus = ConditionType("MachineStatus")
+
+	// WorkspaceConditionTypeInstallNodePlugins is the state when installing node plugins.
+	WorkspaceConditionTypeInstallNodePlugins = ConditionType("InstallNodePlugins")
 
 	// WorkspaceConditionTypeResourceDeleted is the state when Resources have been deleted.
 	WorkspaceConditionTypeResourceDeleted = ConditionType("ResourceDeleted")
