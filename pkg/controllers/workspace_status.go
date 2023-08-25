@@ -6,8 +6,6 @@ import (
 	kdmv1alpha1 "github.com/kdm/api/v1alpha1"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,26 +27,14 @@ func (c *WorkspaceReconciler) updateWorkspaceStatus(ctx context.Context, wObj *k
 }
 
 func (c *WorkspaceReconciler) setWorkspaceStatusCondition(ctx context.Context, wObj *kdmv1alpha1.Workspace, cType kdmv1alpha1.ConditionType,
-	cStatus metav1.ConditionStatus, cMessage string) error {
+	cStatus metav1.ConditionStatus, cReason, cMessage string) error {
 	klog.InfoS("setWorkspaceStatusCondition", "workspace", klog.KObj(wObj), "conditionType", cType, "status", cStatus)
-	// if no change in the condition status, return
-	switch cStatus {
-	case metav1.ConditionFalse:
-		if apimeta.IsStatusConditionFalse(wObj.Status.Conditions, string(cType)) {
-			return nil
-		}
-	case metav1.ConditionTrue:
-		if apimeta.IsStatusConditionTrue(wObj.Status.Conditions, string(cType)) {
-			return nil
-		}
-	default:
-		cStatus = metav1.ConditionUnknown
-	}
-
 	cObj := metav1.Condition{
-		Type:    string(cType),
-		Status:  cStatus,
-		Message: cMessage,
+		Type:               string(cType),
+		Status:             cStatus,
+		Reason:             cReason,
+		ObservedGeneration: wObj.GetGeneration(),
+		Message:            cMessage,
 	}
 	meta.SetStatusCondition(&wObj.Status.Conditions, cObj)
 	return c.updateWorkspaceStatus(ctx, wObj)
