@@ -27,6 +27,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+var torchRunParams = map[string]string{
+	"max_gen_len": "128",
+}
+
 type WorkspaceReconciler struct {
 	client.Client
 	Log      logr.Logger
@@ -393,7 +397,7 @@ func (c *WorkspaceReconciler) applyAnnotations(ctx context.Context, wObj *kdmv1a
 	}
 
 	//TODO generate more strong random service name
-	serviceObj := k8sresources.GenerateLoadBalancerService(ctx, fmt.Sprint("workspace", "-scv", rand.Intn(100_000)), wObj.Namespace, serviceType, wObj.Resource.LabelSelector.MatchLabels)
+	serviceObj := k8sresources.GenerateLoadBalancerService(ctx, fmt.Sprint(wObj.Name, "-scv-", rand.Intn(100_000)), wObj.Namespace, serviceType, wObj.Resource.LabelSelector.MatchLabels)
 	err := k8sresources.CreateLoadBalancerService(ctx, serviceObj, c.Client)
 	if err != nil {
 		return err
@@ -416,11 +420,11 @@ func (c *WorkspaceReconciler) applyInference(ctx context.Context, wObj *kdmv1alp
 	var err error
 	switch presetName {
 	case kdmv1alpha1.PresetSetModelllama2A:
-		err = inference.CreateLLAMA2APresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, c.Client)
+		err = inference.CreateLLAMA2APresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, torchRunParams, c.Client)
 	case kdmv1alpha1.PresetSetModelllama2B:
-		err = inference.CreateLLAMA2BPresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, c.Client)
+		err = inference.CreateLLAMA2BPresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, torchRunParams, c.Client)
 	case kdmv1alpha1.PresetSetModelllama2C:
-		err = inference.CreateLLAMA2CPresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, c.Client)
+		err = inference.CreateLLAMA2CPresetModel(ctx, wObj.Name, wObj.Namespace, wObj.Resource.LabelSelector, volume, torchRunParams, c.Client)
 	default:
 		err = fmt.Errorf("preset model %s is not supported", presetName)
 		klog.ErrorS(err, "no inference has been created")

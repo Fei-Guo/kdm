@@ -15,12 +15,17 @@ import (
 )
 
 const (
-	PresetSetModelllama2AImage = "aimodelsregistry.azurecr.io/llama-2-7b-chat:latest"
-	PresetSetModelllama2BImage = "aimodelsregistry.azurecr.io/llama-2-13b-chat:latest"
-	PresetSetModelllama2CImage = "aimodelsregistry.azurecr.io/llama-2-70b-chat:latest"
+	RegistryName                   = "aimodelsregistry.azurecr.io"
+	PresetSetModelllama2AChatImage = RegistryName + "/llama-2-7b-chat:latest"
+	PresetSetModelllama2BChatImage = RegistryName + "/llama-2-13b-chat:latest"
+	PresetSetModelllama2CChatImage = RegistryName + "/llama-2-70b-chat:latest"
 
 	ProbePath = "/healthz"
 	Port5000  = int32(5000)
+
+	BaseCommandPresetSetModelllama2A = "cd /workspace/llama/llama-2-7b-chat && torchrun web_example_chat_completion.py"
+	BaseCommandPresetSetModelllama2B = "cd /workspace/llama/llama-2-13b-chat && torchrun --nproc_per_node=2 web_example_chat_completion.py"
+	BaseCommandPresetSetModelllama2C = "cd /workspace/llama/llama-2-70b-chat && torchrun --nproc_per_node=4 web_example_chat_completion.py"
 )
 
 var (
@@ -65,14 +70,10 @@ var (
 	}
 )
 
-func CreateLLAMA2APresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector, volume []corev1.Volume, kubeClient client.Client) error {
+func CreateLLAMA2APresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector,
+	volume []corev1.Volume, torchRunParams map[string]string, kubeClient client.Client) error {
 	klog.InfoS("CreateLLAMA2APresetModel")
-	commands := []string{
-		"/bin/sh",
-		"-c",
-		"cd /workspace/llama/llama-2-7b-chat && torchrun web_example_chat_completion.py",
-	}
-
+	commands := buildCommand(BaseCommandPresetSetModelllama2A, torchRunParams)
 	resourceRequirements := corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceName(k8sresources.CapacityNvidiaGPU): resource.MustParse("1"),
@@ -90,7 +91,7 @@ func CreateLLAMA2APresetModel(ctx context.Context, workspaceName, namespace stri
 	}
 
 	depObj := k8sresources.GenerateDeploymentManifest(ctx, fmt.Sprint(workspaceName, string(kdmv1alpha1.PresetSetModelllama2A)), namespace,
-		PresetSetModelllama2AImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
+		PresetSetModelllama2AChatImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
 		resourceRequirements, volumeMount, tolerations, volume)
 	err := k8sresources.CreateDeployment(ctx, depObj, kubeClient)
 	if err != nil {
@@ -99,14 +100,11 @@ func CreateLLAMA2APresetModel(ctx context.Context, workspaceName, namespace stri
 	return nil
 }
 
-func CreateLLAMA2BPresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector, volume []corev1.Volume, kubeClient client.Client) error {
+func CreateLLAMA2BPresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector,
+	volume []corev1.Volume, torchRunParams map[string]string, kubeClient client.Client) error {
 	klog.InfoS("CreateLLAMA2BPresetModel")
 
-	commands := []string{
-		"/bin/sh",
-		"-c",
-		"cd /workspace/llama/llama-2-13b-chat && torchrun --nproc_per_node=2 web_example_chat_completion.py",
-	}
+	commands := buildCommand(BaseCommandPresetSetModelllama2B, torchRunParams)
 
 	resourceRequirements := corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
@@ -125,7 +123,7 @@ func CreateLLAMA2BPresetModel(ctx context.Context, workspaceName, namespace stri
 	}
 
 	depObj := k8sresources.GenerateDeploymentManifest(ctx, fmt.Sprint(workspaceName, string(kdmv1alpha1.PresetSetModelllama2B)), namespace,
-		PresetSetModelllama2BImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
+		PresetSetModelllama2BChatImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
 		resourceRequirements, volumeMount, tolerations, volume)
 	err := k8sresources.CreateDeployment(ctx, depObj, kubeClient)
 	if err != nil {
@@ -134,9 +132,10 @@ func CreateLLAMA2BPresetModel(ctx context.Context, workspaceName, namespace stri
 	return nil
 }
 
-func CreateLLAMA2CPresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector, volume []corev1.Volume, kubeClient client.Client) error {
+func CreateLLAMA2CPresetModel(ctx context.Context, workspaceName, namespace string, labelSelector *v1.LabelSelector,
+	volume []corev1.Volume, torchRunParams map[string]string, kubeClient client.Client) error {
 	klog.InfoS("CreateLLAMA2CPresetModel")
-	var commands []string
+	commands := buildCommand(BaseCommandPresetSetModelllama2C, torchRunParams)
 
 	resourceRequirements := corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
@@ -156,7 +155,7 @@ func CreateLLAMA2CPresetModel(ctx context.Context, workspaceName, namespace stri
 	}
 
 	depObj := k8sresources.GenerateDeploymentManifest(ctx, fmt.Sprint(workspaceName, string(kdmv1alpha1.PresetSetModelllama2C)), namespace,
-		PresetSetModelllama2CImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
+		PresetSetModelllama2CChatImage, 1, labelSelector, commands, containerPorts, livenessProbe, readinessProbe,
 		resourceRequirements, volumeMount, tolerations, volume)
 
 	err := k8sresources.CreateDeployment(ctx, depObj, kubeClient)
@@ -164,4 +163,19 @@ func CreateLLAMA2CPresetModel(ctx context.Context, workspaceName, namespace stri
 		return err
 	}
 	return nil
+}
+
+func buildCommand(baseCommand string, torchRunParams map[string]string) []string {
+	var updatedBaseCommand string
+	for key, value := range torchRunParams {
+		updatedBaseCommand = fmt.Sprintf("%s --%s=%s", baseCommand, key, value)
+	}
+
+	commands := []string{
+		"/bin/sh",
+		"-c",
+		updatedBaseCommand,
+	}
+
+	return commands
 }
