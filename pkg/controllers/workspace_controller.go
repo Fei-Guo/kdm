@@ -28,7 +28,7 @@ import (
 )
 
 var torchRunParams = map[string]string{
-	"max_gen_len": "128",
+	"max_seq_len": "128",
 }
 
 type WorkspaceReconciler struct {
