@@ -16,7 +16,3 @@ resource:
 inference:
   preset:
     name: "llama2-13b"
-    volume:
-    - name: dshm
-      emptyDir:
-        medium: Memory
