@@ -88,7 +88,7 @@ Resource:
   Instance Type:  Standard_NC12s_v3
   Label Selector:
     Match Labels:
-      gpu-provisioner.sh/machine-type:  gpu
+      apps:  llama2-7b
   Preferred Nodes:
     node1
     aks-machine98722-26559722-vmss000001
