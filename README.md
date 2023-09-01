@@ -27,6 +27,12 @@ az aks create --name kdm-aks --resource-group kdm-rg --node-count 1  --generate-
 git clone https://github.com/Fei-Guo/gpu-vmprovisioner.git
 cd gpu-vmprovisioner
 
+export AZURE_SUBSCRIPTION_ID=<your_subscription_id>
+export AZURE_LOCATION=<Azure_region>
+export AZURE_RESOURCE_GROUP=<your_resource_group_name>
+export AZURE_ACR_NAME=<you_Azure_container_registry_name>
+export AZURE_CLUSTER_NAME=<you_AKS_cluster_name>
+
 make az-perm
 make az-patch-skaffold-kubenet
 make az-run
