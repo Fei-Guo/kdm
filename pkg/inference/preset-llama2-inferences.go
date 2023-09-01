@@ -195,7 +195,7 @@ func checkDeploymentStatus(ctx context.Context, depObj *appsv1.Deployment, kubeC
 		case <-tick.C():
 			return fmt.Errorf("check deployment status timed out. deployment %s is not ready", depObj.Name)
 		default:
-
+			time.Sleep(1 * time.Second)
 			err := kubeClient.Get(ctx, client.ObjectKey{
 				Name:      depObj.Name,
 				Namespace: depObj.Namespace,
@@ -207,7 +207,7 @@ func checkDeploymentStatus(ctx context.Context, depObj *appsv1.Deployment, kubeC
 				continue
 			}
 
-			klog.InfoS("machine status is ready", "machine", depObj.Name)
+			klog.InfoS("inference deployment status is ready", "deployment", depObj.Name)
 			return nil
 		}
 	}
