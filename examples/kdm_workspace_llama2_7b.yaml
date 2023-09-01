@@ -9,14 +9,10 @@ resource:
   instanceType: "Standard_NC12s_v3"
   labelSelector:
     matchLabels:
-      apps: kdm
+      apps: llama-7b
   preferredNodes:
     - "node1"
     - "aks-machine98722-26559722-vmss000001"
 inference:
   preset:
     name: "llama2-7b"
-    volume:
-    - name: dshm
-      emptyDir:
-        medium: Memory
