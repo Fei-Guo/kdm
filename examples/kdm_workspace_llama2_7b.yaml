@@ -3,13 +3,7 @@ kind: Workspace
 metadata:
   annotations:
     kubernetes-kdm.io/service-type : load-balancer
-  labels:
-    app.kubernetes.io/name: workspace
-    app.kubernetes.io/instance: workspace-sample
-    app.kubernetes.io/part-of: kdm
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: kdm
-  name: workspace-sample-aks
+  name: workspace-llama-7b-aks
 resource:
   count: 2
   instanceType: "Standard_NC12s_v3"
@@ -21,7 +15,7 @@ resource:
     - "aks-machine98722-26559722-vmss000001"
 inference:
   preset:
-    name: "llama2-13b"
+    name: "llama2-7b"
     volume:
     - name: dshm
       emptyDir:

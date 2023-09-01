@@ -3,13 +3,7 @@ kind: Workspace
 metadata:
   annotations:
     kubernetes-kdm.io/service-type : load-balancer
-  labels:
-    app.kubernetes.io/name: workspace
-    app.kubernetes.io/instance: workspace-sample
-    app.kubernetes.io/part-of: kdm
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: kdm
-  name: workspace-sample-aks
+  name: workspace-llama-13b-aks
 resource:
   count: 2
   instanceType: "Standard_NC12s_v3"
