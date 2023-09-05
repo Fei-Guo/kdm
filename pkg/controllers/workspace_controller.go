@@ -104,43 +104,38 @@ func (c *WorkspaceReconciler) deleteWorkspace(ctx context.Context, wObj *kdmv1al
 	return c.garbageCollectWorkspace(ctx, wObj)
 }
 
-// applyAnnotations applies workspace resource spec.
-func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *kdmv1alpha1.Workspace) error {
-	klog.InfoS("applyWorkspaceResource", "workspace", klog.KObj(wObj))
-	validNodeList := []*corev1.Node{}
-
+// SetDefaultResourceCount ensures there's a default resource count.
+func (c *WorkspaceReconciler) setDefaultResourceCount(wObj *kdmv1alpha1.Workspace) {
 	// Set resource count to 1 if it's not set
 	if lo.FromPtr(wObj.Resource.Count) == 0 {
 		klog.InfoS("resource count is not set, default (count = 1) will be used", "workspace", klog.KObj(wObj))
 		wObj.Resource.Count = lo.ToPtr(1)
 	}
+}
 
-	// Check the current cluster nodes if they match the labelSelector and instanceType
-	validCurrentClusterNodeList, err := c.validateCurrentClusterNodes(ctx, wObj)
-	if err != nil {
-		return err
-	}
-
-	// Check preferredNodes
-	preferredList := wObj.Resource.PreferredNodes
+// CheckPreferredNodes adds preferred nodes (existing valid GPU nodes) to the validNodeList.
+func (c *WorkspaceReconciler) checkPreferredNodes(preferredList []string, validNodeList []*corev1.Node) []*corev1.Node {
 	if preferredList == nil {
 		klog.InfoS("PreferredNodes list is empty")
-	} else {
-		for n := range preferredList {
-			lo.Find(validNodeList, func(nodeItem *corev1.Node) bool {
-				if nodeItem.Name == preferredList[n] {
-					validNodeList = append(validNodeList, nodeItem)
-					return true
-				}
-				// else do nothing for now
-				return false
-			})
-		}
+		return validNodeList
 	}
-	// TODO check nodes in the WorkspaceStatus.WorkerNodes.
 
+	for n := range preferredList {
+		lo.Find(validNodeList, func(nodeItem *corev1.Node) bool {
+			if nodeItem.Name == preferredList[n] {
+				validNodeList = append(validNodeList, nodeItem)
+				return true
+			}
+			return false
+		})
+	}
+	return validNodeList
+}
+
+// AppendValidNodes populates validNodeList based on current valid nodes and desired count.
+func (c *WorkspaceReconciler) appendValidNodes(validNodeList, validCurrentClusterNodeList []*corev1.Node, count int) ([]*corev1.Node, error) {
 	for n := range validCurrentClusterNodeList {
-		if len(validNodeList) == lo.FromPtr(wObj.Resource.Count) {
+		if len(validNodeList) == count {
 			break
 		}
 		_, found := lo.Find(validNodeList, func(nodeItem *corev1.Node) bool {
@@ -150,44 +145,79 @@ func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *
 			validNodeList = append(validNodeList, validCurrentClusterNodeList[n])
 		}
 	}
+	return validNodeList, nil
+}
 
-	validNodeCount := len(validNodeList)
-	// subtract all valid nodes from the desired count
-	remainingNodeCount := lo.FromPtr(wObj.Resource.Count) - validNodeCount
-
-	// if current valid nodes Count == workspace count, then all good and return
-	if remainingNodeCount == 0 {
-		klog.InfoS("number of existing nodes are equal to the required workspace count", "workspace.Count", lo.FromPtr(wObj.Resource.Count))
-	} else {
-		klog.InfoS("need to create more nodes", "NodeCount", remainingNodeCount)
-		for i := 0; i < remainingNodeCount; i++ {
-			newNode, err := c.createAndValidateNode(ctx, wObj)
-			if err != nil {
-				return err
-			}
-			validNodeList = append(validNodeList, newNode)
+// CreateAdditionalNodes creates additional nodes as required.
+func (c *WorkspaceReconciler) createAdditionalNodes(ctx context.Context, remainingCount int, wObj *kdmv1alpha1.Workspace, validNodeList []*corev1.Node) ([]*corev1.Node, error) {
+	for i := 0; i < remainingCount; i++ {
+		newNode, err := c.createAndValidateNode(ctx, wObj)
+		if err != nil {
+			return nil, err
 		}
+		validNodeList = append(validNodeList, newNode)
 	}
+	return validNodeList, nil
+}
 
-	// Ensure all nodes plugins are running successfully
+// EnsureAllNodePlugins ensures all nodes plugins are running successfully.
+func (c *WorkspaceReconciler) ensureAllNodePlugins(ctx context.Context, validNodeList []*corev1.Node, wObj *kdmv1alpha1.Workspace) error {
 	for i := range validNodeList {
 		if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionFalse, "installNodePlugins",
 			fmt.Sprintf("installing plugins for node %s", validNodeList[i].Name)); err != nil {
-			klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 			return err
 		}
-		err = c.ensureNodePlugins(ctx, wObj, validNodeList[i])
+		err := c.ensureNodePlugins(ctx, wObj, validNodeList[i])
 		if err != nil {
 			if err := c.setWorkspaceStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInstallNodePlugins, metav1.ConditionFalse,
 				"installNodePlugins", err.Error()); err != nil {
-				klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
 				return err
 			}
 			return err
 		}
 	}
+	return nil
+}
 
-	// Add the valid nodes names to the WorkspaceStatus.WorkerNodes
+// applyAnnotations applies workspace resource spec.
+func (c *WorkspaceReconciler) applyWorkspaceResource(ctx context.Context, wObj *kdmv1alpha1.Workspace) error {
+	klog.InfoS("applyWorkspaceResource", "workspace", klog.KObj(wObj))
+	validNodeList := []*corev1.Node{}
+
+	// 1. Setting a default resource count.
+	c.setDefaultResourceCount(wObj)
+
+	// 2. Validating current cluster nodes.
+	validCurrentClusterNodeList, err := c.validateCurrentClusterNodes(ctx, wObj)
+	if err != nil {
+		return err
+	}
+
+	// 3. Checking preferred nodes.
+	validNodeList = c.checkPreferredNodes(wObj.Resource.PreferredNodes, validNodeList)
+
+	// 4. TODO: Check nodes in the WorkspaceStatus.WorkerNodes.
+
+	// 5. Appending to validNodeList.
+	validNodeList, err = c.appendValidNodes(validNodeList, validCurrentClusterNodeList, lo.FromPtr(wObj.Resource.Count))
+	if err != nil {
+		return err
+	}
+
+	// 6. Create Additional Nodes if required.
+	remainingNodeCount := lo.FromPtr(wObj.Resource.Count) - len(validNodeList)
+	validNodeList, err = c.createAdditionalNodes(ctx, remainingNodeCount, wObj, validNodeList)
+	if err != nil {
+		return err
+	}
+
+	// 7. Ensure all nodes plugins are running successfully.
+	err = c.ensureAllNodePlugins(ctx, validNodeList, wObj)
+	if err != nil {
+		return err
+	}
+
+	// 8. Add the valid nodes names to the WorkspaceStatus.WorkerNodes.
 	err = c.updateWorkspaceStatusWithNodeList(ctx, wObj, validNodeList)
 	if err != nil {
 		return err
