@@ -10,8 +10,8 @@ const (
 	//WorkspaceConditionTypeReady is the Workspace state that summarize all operations' state.
 	WorkspaceConditionTypeReady ConditionType = ConditionType("WorkspaceReady")
 
-	// WorkspaceConditionTypeResourceProvisioned is the state when Resources have been created.
-	WorkspaceConditionTypeResourceProvisioned = ConditionType("ResourceProvisioned")
+	// WorkspaceConditionTypeResourceStatus is the state when Resources have been created.
+	WorkspaceConditionTypeResourceStatus = ConditionType("ResourceStatus")
 
 	// WorkspaceConditionTypeMachineStatus is the state when checking machine status.
 	WorkspaceConditionTypeMachineStatus = ConditionType("MachineReady")
