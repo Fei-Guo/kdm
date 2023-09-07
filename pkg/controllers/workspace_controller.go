@@ -420,7 +420,12 @@ func (c *WorkspaceReconciler) applyAnnotations(ctx context.Context, wObj *kdmv1a
 // applyInference applies inference spec.
 func (c *WorkspaceReconciler) applyInference(ctx context.Context, wObj *kdmv1alpha1.Workspace) error {
 	klog.InfoS("applyInference", "workspace", klog.KObj(wObj))
-
+	if err := c.setStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInferenceStatus, metav1.ConditionUnknown,
+		"WorkspaceInferenceStatusDeploying", "Deploying inference"); err != nil {
+		klog.ErrorS(err, "failed to update workspace status", "workspace", wObj)
+		return err
+	}
+	
 	existingObj, err := k8sresources.GetDeployment(ctx, wObj.Name, wObj.Namespace, c.Client)
 	if err != nil && !errors.IsNotFound(err) {
 		if err := c.setStatusCondition(ctx, wObj, kdmv1alpha1.WorkspaceConditionTypeInferenceStatus, metav1.ConditionFalse,
